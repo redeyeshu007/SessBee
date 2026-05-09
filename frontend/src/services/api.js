@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://sessbee-backend.onrender.com',
+  baseURL: import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:5000' : 'https://sessbee-backend.onrender.com'),
 });
 
 API.interceptors.request.use((config) => {
