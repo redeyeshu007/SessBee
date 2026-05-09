@@ -23,7 +23,7 @@ const sendEmail = async ({ to, subject, html }) => {
     });
     try {
       await transporter.sendMail({
-        from: `"SessBe" <${process.env.EMAIL_USER}>`,
+        from: `"SessBe" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
         to,
         subject,
         html,
