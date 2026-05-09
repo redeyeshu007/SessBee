@@ -83,12 +83,17 @@ const sendOTPEmail = async (to, otp, purpose) => {
     </p>
   `;
 
-  await transporter.sendMail({
-    from: `"SessBe" <${process.env.EMAIL_USER}>`,
-    to,
-    subject: `${otp} is your SessBe verification code`,
-    html: baseTemplate(content),
-  });
+  try {
+    await transporter.sendMail({
+      from: `"SessBe" <${process.env.EMAIL_USER}>`,
+      to,
+      subject: `${otp} is your SessBe verification code`,
+      html: baseTemplate(content),
+    });
+  } catch (emailError) {
+    console.error('Email send failed:', emailError.message);
+    throw new Error('Failed to send OTP email. Please check your email address or try again later.');
+  }
 };
 
 const sendBookingEmail = async (to, bookingData) => {
