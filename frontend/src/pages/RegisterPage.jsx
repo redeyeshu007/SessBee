@@ -21,12 +21,16 @@ const RegisterPage = () => {
     e.preventDefault();
     if (password.length < 8) return toast.error('Password must be at least 8 characters');
     setLoading(true);
+    const toastId = toast.loading('Waking up server... please wait up to 30 seconds');
     try {
       await sendRegisterOTP(name, email, password);
+      toast.dismiss(toastId);
       toast.success('OTP sent to your email!');
       setStep(2);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Registration failed');
+      toast.dismiss(toastId);
+      const msg = error.response?.data?.message || error.message || 'Registration failed. Try again.';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

@@ -19,8 +19,10 @@ const LoginPage = () => {
   const handleSendOTP = async (e) => {
     e.preventDefault();
     setLoading(true);
+    const toastId = toast.loading('Waking up server... please wait up to 30 seconds');
     try {
       const res = await sendLoginOTP(email.trim(), password);
+      toast.dismiss(toastId);
       if (res && res.directLogin) {
         toast.success(`Welcome back, Admin!`);
         navigate(res.role === 'admin' ? '/admin' : '/');
@@ -29,6 +31,7 @@ const LoginPage = () => {
       toast.success('OTP sent to your email!');
       setStep(2);
     } catch (error) {
+      toast.dismiss(toastId);
       toast.error(error.response?.data?.message || 'Login failed');
     } finally {
       setLoading(false);
