@@ -7,67 +7,67 @@ const { sendBookingEmail } = require('../utils/mailer');
 // @access  Private
 const createBooking = async (req, res) => {
   const { expert, name, email, phone, date, timeSlot, notes } = req.body;
+  const userId = req.user._id;
 
   try {
-    const expertData = await Expert.findById(expert);
-    if (!expertData) {
-      return res.status(404).json({ message: 'Expert not found' });
-    }
-
-    const slotIndex = expertData.availableSlots.findIndex(
-      s => s.date === date && s.time === timeSlot
+    // Atomic: only push if slot exists, is open, and user hasn't already booked it.
+    const reserved = await Expert.findOneAndUpdate(
+      {
+        _id: expert,
+        availableSlots: {
+          $elemMatch: { date, time: timeSlot, status: 'open', participants: { $ne: userId } },
+        },
+      },
+      { $push: { 'availableSlots.$.participants': userId } },
+      { new: true }
     );
 
-    if (slotIndex === -1) {
-      return res.status(400).json({ message: 'Slot not found' });
-    }
-
-    const slot = expertData.availableSlots[slotIndex];
-
-    if (slot.status !== 'open') {
+    if (!reserved) {
+      // Distinguish "already booked" vs "slot not bookable" for a clearer message.
+      const expertData = await Expert.findById(expert);
+      if (!expertData) return res.status(404).json({ message: 'Expert not found' });
+      const slot = expertData.availableSlots.find(s => s.date === date && s.time === timeSlot);
+      if (!slot) return res.status(400).json({ message: 'Slot not found' });
+      if (slot.participants.some(p => p.toString() === userId.toString())) {
+        return res.status(400).json({ message: 'You have already booked this slot' });
+      }
       return res.status(400).json({ message: `This slot is ${slot.status}` });
     }
 
-    if (slot.participants.length >= slot.capacity) {
+    const updatedSlot = reserved.availableSlots.find(s => s.date === date && s.time === timeSlot);
+
+    // Capacity check after the atomic push: if we overshot, roll back.
+    if (updatedSlot.participants.length > updatedSlot.capacity) {
+      await Expert.updateOne(
+        { _id: expert },
+        { $pull: { 'availableSlots.$[s].participants': userId } },
+        { arrayFilters: [{ 's.date': date, 's.time': timeSlot }] }
+      );
       return res.status(400).json({ message: 'This slot is full' });
     }
 
-    // Check if user already booked this slot
-    if (slot.participants.includes(req.user._id)) {
-      return res.status(400).json({ message: 'You have already booked this slot' });
-    }
-
-    // Register participant in Expert model
-    expertData.availableSlots[slotIndex].participants.push(req.user._id);
-    await expertData.save();
-
-    const booking = new Booking({
-      user: req.user._id,
-      expert,
-      name,
-      email,
-      phone,
-      date,
-      timeSlot,
-      notes,
-    });
-
-    const createdBooking = await booking.save();
-    
-    // Send confirmation email
+    let createdBooking;
     try {
-      await sendBookingEmail(email, {
-        expert: expertData,
-        date,
-        timeSlot
+      createdBooking = await Booking.create({
+        user: userId, expert, name, email, phone, date, timeSlot, notes,
       });
-    } catch (mailError) {
-      console.error('Failed to send booking email:', mailError);
+    } catch (err) {
+      // Booking save failed — release the seat so the user isn't stuck.
+      await Expert.updateOne(
+        { _id: expert },
+        { $pull: { 'availableSlots.$[s].participants': userId } },
+        { arrayFilters: [{ 's.date': date, 's.time': timeSlot }] }
+      );
+      throw err;
     }
 
-    // Emit socket event for real-time update
+    sendBookingEmail(email, { expert: reserved, date, timeSlot })
+      .catch(mailError => console.error('Failed to send booking email:', mailError.message));
+
     if (req.io) {
-      req.io.emit('bookingUpdate', { expert, date, timeSlot, participantsCount: slot.participants.length });
+      req.io.emit('bookingUpdate', {
+        expert, date, timeSlot, participantsCount: updatedSlot.participants.length,
+      });
     }
 
     res.status(201).json(createdBooking);

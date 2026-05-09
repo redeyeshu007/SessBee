@@ -17,6 +17,28 @@ const formatTime = (timeStr) => {
   return `${h12}:${minutes} ${ampm}`;
 };
 
+// Resize image to max 400px on longest edge and re-encode as JPEG.
+// A 2 MB photo becomes ~50 KB, which makes the create/list requests fast.
+const compressImage = (file, maxSize = 400, quality = 0.8) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
 const AdminDashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState({ totalBookings: 0, totalExperts: 0, totalUsers: 120, revenue: '$12,450' });
@@ -35,6 +57,7 @@ const AdminDashboard = () => {
     availableSlots: []
   });
   const [profileData, setProfileData] = useState({ name: '', email: '', password: '', avatar: '' });
+  const [submitting, setSubmitting] = useState(false);
 
   const handleImageUpload = (e, isProfile = false) => {
     const file = e.target.files[0];
@@ -155,10 +178,12 @@ const AdminDashboard = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     if (formData.availableSlots.length === 0) {
       toast.error('Please add at least one slot');
       return;
     }
+    setSubmitting(true);
     try {
       if (editingExpert) {
         await API.put(`/api/experts/${editingExpert._id}`, formData);
@@ -171,6 +196,8 @@ const AdminDashboard = () => {
       fetchData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Action failed');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -402,21 +429,25 @@ const AdminDashboard = () => {
                           {formData.avatar && (
                             <img src={formData.avatar} alt="Preview" className="w-16 h-16 rounded-2xl object-cover border-2 border-primary" />
                           )}
-                          <input 
-                            type="file" 
+                          <input
+                            type="file"
                             accept="image/*"
                             required={!formData.avatar}
-                            className="flex-1 px-5 py-4 bg-gray-50 rounded-2xl border-none font-medium text-sm" 
+                            className="flex-1 px-5 py-4 bg-gray-50 rounded-2xl border-none font-medium text-sm"
                             onChange={async (e) => {
                               const file = e.target.files[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setFormData({ ...formData, avatar: reader.result });
-                                };
-                                reader.readAsDataURL(file);
+                              if (!file) return;
+                              if (file.size > 10 * 1024 * 1024) {
+                                toast.error('Image too large (max 10MB)');
+                                return;
                               }
-                            }} 
+                              try {
+                                const compressed = await compressImage(file);
+                                setFormData(prev => ({ ...prev, avatar: compressed }));
+                              } catch {
+                                toast.error('Could not process image');
+                              }
+                            }}
                           />
                         </div>
                       </div>
@@ -478,7 +509,15 @@ const AdminDashboard = () => {
                       </div>
                     </div>
                   </div>
-                  <button type="submit" className="w-full bg-primary text-white py-5 rounded-[24px] font-black text-lg shadow-xl">{editingExpert ? 'Save Session' : 'Publish Session'}</button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full bg-primary text-white py-5 rounded-[24px] font-black text-lg shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {submitting
+                      ? (editingExpert ? 'Saving...' : 'Publishing...')
+                      : (editingExpert ? 'Save Session' : 'Publish Session')}
+                  </button>
                 </form>
               </motion.div>
             </div>

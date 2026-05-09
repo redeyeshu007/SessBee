@@ -19,8 +19,9 @@ const bookingSchema = mongoose.Schema(
   { timestamps: true }
 );
 
-// Compound index to prevent double booking: (expertId + date + timeSlot)
-bookingSchema.index({ expert: 1, date: 1, timeSlot: 1 }, { unique: true });
+// Same user can't book the same slot twice. Multiple users can share a slot up to its capacity.
+bookingSchema.index({ user: 1, expert: 1, date: 1, timeSlot: 1 }, { unique: true });
+bookingSchema.index({ expert: 1, date: 1, timeSlot: 1 });
 
 const Booking = mongoose.model('Booking', bookingSchema);
 module.exports = Booking;

@@ -24,6 +24,7 @@ const ExpertDetailPage = () => {
     phone: '',
     notes: ''
   });
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
 
   const fetchExpert = async () => {
     try {
@@ -65,12 +66,14 @@ const ExpertDetailPage = () => {
 
   const handleBooking = async (e) => {
     e.preventDefault();
+    if (bookingSubmitting) return;
     if (!user) {
       toast.error('Please login to book a session');
       navigate('/login');
       return;
     }
 
+    setBookingSubmitting(true);
     try {
       await API.post('/api/bookings', {
         expert: id,
@@ -83,6 +86,8 @@ const ExpertDetailPage = () => {
       navigate('/my-bookings');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Booking failed');
+    } finally {
+      setBookingSubmitting(false);
     }
   };
 
@@ -348,11 +353,12 @@ const ExpertDetailPage = () => {
                   >
                     Cancel
                   </button>
-                  <button 
-                    type="submit" 
-                    className="flex-[2] btn-primary py-4 text-lg"
+                  <button
+                    type="submit"
+                    disabled={bookingSubmitting}
+                    className="flex-[2] btn-primary py-4 text-lg disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Confirm & Book
+                    {bookingSubmitting ? 'Booking...' : 'Confirm & Book'}
                   </button>
                 </div>
               </form>
