@@ -12,6 +12,27 @@ const sendEmail = async ({ to, subject, html, otp }) => {
       html,
     });
     if (error) throw new Error(error.message);
+  } else if (process.env.EMAIL_SERVICE === 'mailtrap') {
+    const transporter = nodemailer.createTransport({
+      host: "sandbox.smtp.mailtrap.io",
+      port: 2525,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+    try {
+      await transporter.sendMail({
+        from: `"SessBe" <${process.env.EMAIL_FROM || 'no-reply@sessbe.com'}>`,
+        to,
+        subject,
+        html,
+      });
+      console.log(`[MAILTRAP] Success: OTP sent to ${to}`);
+    } catch (emailError) {
+      console.error(`❌ Mailtrap Error:`, emailError.message);
+      console.log(`[SAFE MODE] OTP for ${to} is: ${otp}`);
+    }
   } else if (process.env.EMAIL_SERVICE === 'brevo') {
     const https = require('https');
     const data = JSON.stringify({
