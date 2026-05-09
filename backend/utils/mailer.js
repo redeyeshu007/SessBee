@@ -13,32 +13,45 @@ const sendEmail = async ({ to, subject, html, otp }) => {
     });
     if (error) throw new Error(error.message);
   } else if (process.env.EMAIL_SERVICE === 'brevo') {
-    const transporter = nodemailer.createTransport({
-      host: 'smtp-relay.brevo.com',
-      port: 587,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-      connectionTimeout: 10000, // 10 seconds
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
+    const https = require('https');
+    const data = JSON.stringify({
+      sender: { name: 'SessBe', email: process.env.EMAIL_FROM || 'sessbeoffi@gmail.com' },
+      to: [{ email: to }],
+      subject: subject,
+      htmlContent: html
     });
-    try {
-      await transporter.sendMail({
-        from: `"SessBe" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
-        to,
-        subject,
-        html,
+
+    const options = {
+      hostname: 'api.brevo.com',
+      path: '/v3/smtp/email',
+      method: 'POST',
+      headers: {
+        'api-key': process.env.EMAIL_PASS,
+        'Content-Type': 'application/json',
+        'Content-Length': data.length
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let responseBody = '';
+      res.on('data', (d) => { responseBody += d; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          console.log(`[BREVO API] Success: OTP sent to ${to}`);
+        } else {
+          console.error(`❌ Brevo API Error (${res.statusCode}):`, responseBody);
+          console.log(`[SAFE MODE] OTP for ${to} is: ${otp}`);
+        }
       });
-      console.log(`[EMAIL] OTP sent to ${to}`);
-    } catch (emailError) {
-      console.error('❌ Email failed but continuing in Safe Mode:', emailError.message);
-      console.log(`\n**************************************************`);
+    });
+
+    req.on('error', (e) => {
+      console.error('❌ Brevo API Connection Error:', e.message);
       console.log(`[SAFE MODE] OTP for ${to} is: ${otp}`);
-      console.log(`**************************************************\n`);
-      // We don't throw the error here, so the user can still proceed
-    }
+    });
+
+    req.write(data);
+    req.end();
   } else {
     const transporter = nodemailer.createTransport({
       service: process.env.EMAIL_SERVICE || 'gmail',
