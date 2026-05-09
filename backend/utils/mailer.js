@@ -1,16 +1,38 @@
 const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    service: process.env.EMAIL_SERVICE || 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-    tls: {
-      rejectUnauthorized: false
+const sendEmail = async ({ to, subject, html }) => {
+  // Use Resend in production (Render), Gmail locally
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const { error } = await resend.emails.send({
+      from: 'SessBe <onboarding@resend.dev>',
+      to,
+      subject,
+      html,
+    });
+    if (error) throw new Error(error.message);
+  } else {
+    const transporter = nodemailer.createTransport({
+      service: process.env.EMAIL_SERVICE || 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+      tls: { rejectUnauthorized: false }
+    });
+    try {
+      await transporter.sendMail({
+        from: `"SessBe" <${process.env.EMAIL_USER}>`,
+        to,
+        subject,
+        html,
+      });
+    } catch (emailError) {
+      console.error('Email send failed:', emailError.message);
+      throw new Error('Failed to send OTP email. Please check your email address or try again later.');
     }
-  });
+  }
 };
 
 const baseTemplate = (content) => `
@@ -54,7 +76,6 @@ const baseTemplate = (content) => `
 `;
 
 const sendOTPEmail = async (to, otp, purpose) => {
-  const transporter = createTransporter();
   const isRegister = purpose === 'register';
   const isForgot = purpose === 'forgot-password';
   
@@ -83,22 +104,14 @@ const sendOTPEmail = async (to, otp, purpose) => {
     </p>
   `;
 
-  try {
-    await transporter.sendMail({
-      from: `"SessBe" <${process.env.EMAIL_USER}>`,
-      to,
-      subject: `${otp} is your SessBe verification code`,
-      html: baseTemplate(content),
-    });
-  } catch (emailError) {
-    console.error('Email send failed:', emailError.message);
-    throw new Error('Failed to send OTP email. Please check your email address or try again later.');
-  }
+  await sendEmail({
+    to,
+    subject: `${otp} is your SessBe verification code`,
+    html: baseTemplate(content),
+  });
 };
 
 const sendBookingEmail = async (to, bookingData) => {
-  const transporter = createTransporter();
-  
   const content = `
     <h2 style="font-size: 24px; font-weight: 800; color: #1F2937; margin-bottom: 12px;">
       Booking Confirmed! 🎉
@@ -135,8 +148,7 @@ const sendBookingEmail = async (to, bookingData) => {
     </p>
   `;
 
-  await transporter.sendMail({
-    from: `"SessBe" <${process.env.EMAIL_USER}>`,
+  await sendEmail({
     to,
     subject: `Booking Confirmed: Session with ${bookingData.expert.name}`,
     html: baseTemplate(content),
