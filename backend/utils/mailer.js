@@ -1,8 +1,37 @@
 const nodemailer = require('nodemailer');
 const { Resend } = require('resend');
 
+const sendViaBrevoApi = async ({ to, subject, html, otp }) => {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': process.env.BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      'accept': 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: 'SessBe', email: process.env.EMAIL_FROM || 'no-reply@sessbe.com' },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    console.error(`❌ Brevo API ${res.status}:`, body);
+    if (otp) console.log(`[SAFE MODE] OTP for ${to} is: ${otp}`);
+    throw new Error('Failed to send email. Please try again later.');
+  }
+  console.log(`[BREVO API] Success: email sent to ${to}`);
+};
+
 const sendEmail = async ({ to, subject, html, otp }) => {
-  // Use Resend in production (Render), Gmail locally
+  // Brevo HTTP API takes priority — works on any cloud provider (port 443).
+  if (process.env.BREVO_API_KEY) {
+    return sendViaBrevoApi({ to, subject, html, otp });
+  }
+
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const { error } = await resend.emails.send({
@@ -34,45 +63,34 @@ const sendEmail = async ({ to, subject, html, otp }) => {
       console.log(`[SAFE MODE] OTP for ${to} is: ${otp}`);
     }
   } else if (process.env.EMAIL_SERVICE === 'brevo') {
-    const https = require('https');
-    const data = JSON.stringify({
-      sender: { name: 'SessBe', email: process.env.EMAIL_FROM || 'sessbeoffi@gmail.com' },
-      to: [{ email: to }],
-      subject: subject,
-      htmlContent: html
+    // Brevo SMTP relay — matches the xsmtpsib-* SMTP key in EMAIL_PASS.
+    // The REST API at api.brevo.com requires a different xkeysib-* API key.
+    const transporter = nodemailer.createTransport({
+      host: 'smtp-relay.brevo.com',
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     });
 
-    const options = {
-      hostname: 'api.brevo.com',
-      path: '/v3/smtp/email',
-      method: 'POST',
-      headers: {
-        'api-key': process.env.EMAIL_PASS,
-        'Content-Type': 'application/json',
-        'Content-Length': data.length
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let responseBody = '';
-      res.on('data', (d) => { responseBody += d; });
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          console.log(`[BREVO API] Success: OTP sent to ${to}`);
-        } else {
-          console.error(`❌ Brevo API Error (${res.statusCode}):`, responseBody);
-          console.log(`[SAFE MODE] OTP for ${to} is: ${otp}`);
-        }
+    try {
+      await transporter.sendMail({
+        from: `"SessBe" <${process.env.EMAIL_FROM || 'no-reply@sessbe.com'}>`,
+        to,
+        subject,
+        html,
       });
-    });
-
-    req.on('error', (e) => {
-      console.error('❌ Brevo API Connection Error:', e.message);
-      console.log(`[SAFE MODE] OTP for ${to} is: ${otp}`);
-    });
-
-    req.write(data);
-    req.end();
+      console.log(`[BREVO SMTP] Success: email sent to ${to}`);
+    } catch (emailError) {
+      console.error('❌ Brevo SMTP Error:', emailError.message);
+      if (otp) console.log(`[SAFE MODE] OTP for ${to} is: ${otp}`);
+      throw new Error('Failed to send email. Please try again later.');
+    }
   } else {
     const transporter = nodemailer.createTransport({
       service: process.env.EMAIL_SERVICE || 'gmail',
