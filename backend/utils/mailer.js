@@ -12,6 +12,26 @@ const sendEmail = async ({ to, subject, html }) => {
       html,
     });
     if (error) throw new Error(error.message);
+  } else if (process.env.EMAIL_SERVICE === 'brevo') {
+    const transporter = nodemailer.createTransport({
+      host: 'smtp-relay.brevo.com',
+      port: 587,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+    try {
+      await transporter.sendMail({
+        from: `"SessBe" <${process.env.EMAIL_USER}>`,
+        to,
+        subject,
+        html,
+      });
+    } catch (emailError) {
+      console.error('Brevo SMTP failed:', emailError.message);
+      throw new Error('Email delivery failed.');
+    }
   } else {
     const transporter = nodemailer.createTransport({
       service: process.env.EMAIL_SERVICE || 'gmail',
