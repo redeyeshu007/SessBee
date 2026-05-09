@@ -29,7 +29,8 @@ const RegisterPage = () => {
       setStep(2);
     } catch (error) {
       toast.dismiss(toastId);
-      const msg = error.response?.data?.message || error.message || 'Registration failed. Try again.';
+      console.error('Registration Error:', error);
+      const msg = error.response?.data?.message || error.message || 'Connection failed. Is the server running?';
       toast.error(msg);
     } finally {
       setLoading(false);
