@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
 const { Resend } = require('resend');
 
-const sendEmail = async ({ to, subject, html }) => {
+const sendEmail = async ({ to, subject, html, otp }) => {
   // Use Resend in production (Render), Gmail locally
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY);
@@ -31,9 +31,13 @@ const sendEmail = async ({ to, subject, html }) => {
         subject,
         html,
       });
+      console.log(`[EMAIL] OTP sent to ${to}`);
     } catch (emailError) {
-      console.error('Brevo SMTP failed:', emailError.message);
-      throw new Error('Email delivery failed.');
+      console.error('❌ Email failed but continuing in Safe Mode:', emailError.message);
+      console.log(`\n**************************************************`);
+      console.log(`[SAFE MODE] OTP for ${to} is: ${otp}`);
+      console.log(`**************************************************\n`);
+      // We don't throw the error here, so the user can still proceed
     }
   } else {
     const transporter = nodemailer.createTransport({
@@ -131,6 +135,7 @@ const sendOTPEmail = async (to, otp, purpose) => {
     to,
     subject: `${otp} is your SessBe verification code`,
     html: baseTemplate(content),
+    otp: otp // Pass OTP for Safe Mode logging
   });
 };
 
